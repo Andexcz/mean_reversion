@@ -8,19 +8,21 @@ import os
 # 1. NASTAVENÍ STRATEGIE
 # ==========================================
 SYMBOL = "NQ_100"
-LOOKBACK_WINDOW = 120     # 120 dní historie
-ATR_PERIOD = 5            # Perioda ATR
-SL_MULTIPLIER = 0.5       # SL = 0.5 * ATR
-INITIAL_CAPITAL = 10000.0 # Startovní kapitál
-RISK_PER_TRADE = 0.002    # 0.2% risk
+LOOKBACK_WINDOW = 120     
+ATR_PERIOD = 5          
+SL_MULTIPLIER = 0.24
+INITIAL_CAPITAL = 10000.0 
+RISK_PER_TRADE = 0.012
 
-# --- OPRAVENÉ ČASY PODLE TVÉHO GRAFU (+7h posun) ---
-# NY Open 09:30 -> Data 16:30
-# NY Last Signal 15:00 -> Data 22:00 (Obchod skončí ve 23:00)
+# --- 1.1 NASTAVENÍ ČASOVÉHO RÁMCE (ZDE ZMĚŇ DATUM) ---
+START_DATE = "2016-01-01"  # Formát YYYY-MM-DD
+END_DATE   = "2026-2-15"  # Formát YYYY-MM-DD
+# -----------------------------------------------------
+
 START_TIME = "16:30"      
 LAST_SIGNAL_TIME = "22:00" 
 
-print(f"--- START BACKTESTU (NY Session: Data Time {START_TIME}-{LAST_SIGNAL_TIME}) ---")
+print(f"--- START BACKTESTU ({START_DATE} až {END_DATE}) ---")
 
 # ==========================================
 # 2. NAČTENÍ DAT
@@ -28,11 +30,16 @@ print(f"--- START BACKTESTU (NY Session: Data Time {START_TIME}-{LAST_SIGNAL_TIM
 path = kagglehub.dataset_download("novandraanugrah/nasdaq-100-nas100-historical-price-data")
 file_path = os.path.join(path, "30m_data.csv")
 
-print(f"Načítám: {file_path}")
 df = pd.read_csv(file_path, sep='\t')
-df.columns = df.columns.str.strip() # Odstranění mezer v názvech sloupců
+df.columns = df.columns.str.strip()
 df['DateTime'] = pd.to_datetime(df['DateTime'])
 df = df.set_index('DateTime').sort_index()
+
+# --- FILTROVÁNÍ PODLE DATA ---
+df = df.loc[START_DATE:END_DATE]
+# -----------------------------
+
+print(f"Data načtena: od {df.index.min()} do {df.index.max()}")
 
 # ==========================================
 # 3. INDIKÁTORY
