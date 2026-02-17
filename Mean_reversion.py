@@ -1,141 +1,128 @@
-import yfinance as yf
+import kagglehub
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import t 
+import os
 
-class MeanReversionBacktester:
-    def __init__(self, ticker, start_date, end_date, window=20, transaction_cost=0.001, degrees_of_freedom=3):
-        self.ticker = ticker
-        self.start = start_date
-        self.end = end_date
+class FinalLongDurationBacktester:
+    def __init__(self, start_capital=10000, window=30, transaction_cost=0.0002, sl_pct=0.02):
+        self.start_capital = start_capital
         self.window = window
-        self.tc = transaction_cost
-        self.df_stat = degrees_of_freedom
+        self.tc = transaction_cost 
+        self.sl_pct = sl_pct  
+        self.tp_pct = sl_pct * 2  # RR 1:2
         self.data = None
+        self.trades_list = [] 
 
     def fetch_data(self):
-        print(f"Fetching data for {self.ticker}...")
-        raw = yf.download(self.ticker, start=self.start, end=self.end, progress=False, auto_adjust=True)
+        print("Stahuji data...")
+        path = kagglehub.dataset_download("novandraanugrah/nasdaq-100-nas100-historical-price-data")
+        file_path = os.path.join(path, "30m_data.csv")
+        raw = pd.read_csv(file_path, sep='\t')
+        raw.columns = raw.columns.str.strip()
+        raw['DateTime'] = pd.to_datetime(raw['DateTime'])
+        raw = raw.set_index('DateTime').sort_index()
         
-        #Just to fix the yfinance new structure (AI saved me here)
-        if isinstance(raw.columns, pd.MultiIndex):
-            try:
-                raw = raw.xs(self.ticker, level=1, axis=1)
-            except:
-                raw.columns = raw.columns.droplevel(1)
-
-        if 'Close' in raw.columns:
-            close_prices = raw['Close']
-        else:
-            close_prices = raw.iloc[:, 0]
-            
-        close_prices = close_prices.squeeze()
-        
-        # Rebuild clean dataframe
-        df = pd.DataFrame(close_prices)
-        df.columns = ['Close']
-        
+        df = raw.copy()
         df['Mean'] = df['Close'].rolling(window=self.window).mean()
         df['Std'] = df['Close'].rolling(window=self.window).std()
         df['t_stat'] = (df['Close'] - df['Mean']) / df['Std']
-        df['Prob'] = t.cdf(df['t_stat'], df=self.df_stat)
+        df['Prob'] = t.cdf(df['t_stat'], df=5) 
+        df['SMA_Trend'] = df['Close'].rolling(window=500).mean()
         
         self.data = df.dropna()
-        print(f"Data ready. Rows: {len(self.data)}")
+        print(f"Data připravena. Svíček: {len(self.data)}")
 
     def run_backtest(self):
-        if self.data is None: raise Exception("Data not loaded.")
+        capital = self.start_capital
+        position = 0
+        entry_price = 0
+        shares = 0
         
-        position = 0 
-        positions = []
+        equity_curve = []
+        self.trades_list = []
+        
+        closes = self.data['Close'].values
+        opens = self.data['Open'].values
+        highs = self.data['High'].values
+        lows = self.data['Low'].values
         probs = self.data['Prob'].values
+        trends = self.data['SMA_Trend'].values
+        dates = self.data.index
 
-        for p in probs:        
-            # LOOKING FOR ENTRY
+        for i in range(len(self.data)):
+            if i == 0: 
+                equity_curve.append(capital)
+                continue
+
+            if position == 1:
+                sl_price = entry_price * (1 - self.sl_pct)
+                tp_price = entry_price * (1 + self.tp_pct)
+                
+                # Exit na Stop Loss
+                if lows[i] <= sl_price:
+                    exit_price = sl_price * (1 - self.tc)
+                    capital = shares * exit_price
+                    self.trades_list.append({'Date': dates[i], 'PnL': capital - prev_cap, 'Type': 'SL'})
+                    position = 0
+                    shares = 0
+                
+                # Exit na Take Profit
+                elif highs[i] >= tp_price:
+                    exit_price = tp_price * (1 - self.tc)
+                    capital = shares * exit_price
+                    self.trades_list.append({'Date': dates[i], 'PnL': capital - prev_cap, 'Type': 'TP'})
+                    position = 0
+                    shares = 0
+
             if position == 0:
-                if p < 0.10:
-                    position = 1   # Buy
-                elif p > 0.90:
-                    position = -1  # Short
+                if probs[i-1] < 0.02 and closes[i-1] > trends[i-1]:
+                    entry_price = opens[i] * (1 + self.tc)
+                    shares = capital / entry_price
+                    prev_cap = capital
+                    position = 1
 
-            # LOOKING FOR EXIT (Long-case)
-            elif position == 1:
-                if p > 0.5:
-                    position = 0   
-                elif p < 0.01:    
-                    position = 0
+            equity_curve.append(shares * closes[i] if position == 1 else capital)
 
-             # LOOKING FOR EXIT (Short-case)
-            elif position == -1:
-                if p <= 0.5:
-                    position = 0  
-                elif p > 0.99:    
-                    position = 0
-
-            positions.append(position)
-        
-        self.data['Position'] = positions
-        self.data['Position_Lagged'] = self.data['Position'].shift(1)
-        self._calculate_returns()
-
-    def _calculate_returns(self):
-        self.data['Market_Returns'] = np.log(self.data['Close'] / self.data['Close'].shift(1))
-        self.data['Strategy_Gross'] = self.data['Position_Lagged'] * self.data['Market_Returns']
-        trades = self.data['Position_Lagged'].diff().abs()
-        self.data['Strategy_Net'] = self.data['Strategy_Gross'] - (trades * self.tc)
-        self.data['Cumulative_Market'] = self.data['Market_Returns'].cumsum().apply(np.exp)
-        self.data['Cumulative_Strategy'] = self.data['Strategy_Net'].cumsum().apply(np.exp)
+        self.data['Equity'] = equity_curve
 
     def plot_results(self):
-        # DATA PREPARATION
-        # Convert Log Returns back to Simple Percentage for plotting (easier to read)
-        daily_pct = np.exp(self.data['Strategy_Net']) - 1
-        
-        # Calculate Drawdown
-        peak = self.data['Cumulative_Strategy'].cummax()
-        drawdown = (self.data['Cumulative_Strategy'] - peak) / peak
+        trades_df = pd.DataFrame(self.trades_list)
+        if trades_df.empty: return
 
-        # 2. SETUP PLOT 
-        fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(12, 12), sharex=True)
+        # Výpočty metrik
+        peak = self.data['Equity'].cummax()
+        drawdown = (self.data['Equity'] - peak) / peak
+        max_dd = drawdown.min() * 100
         
-        # --- PANEL 1: EQUITY CURVE ---
-        ax1.plot(self.data['Cumulative_Market'], label='Buy & Hold (SPY)', color='gray', alpha=0.5, linewidth=1.5)
-        ax1.plot(self.data['Cumulative_Strategy'], label='Student-t Strategy', color='blue', linewidth=2)
-        ax1.set_title(f'Equity Curve: {self.ticker}')
-        ax1.set_ylabel('Growth of $1')
-        ax1.legend(loc="upper left")
-        ax1.grid(True, alpha=0.3)
-        
-        # --- PANEL 2: DAILY PnL ---
-        colors = ['green' if x >= 0 else 'red' for x in daily_pct]
-        ax2.bar(daily_pct.index, daily_pct, color=colors, width=1.0)
-        ax2.set_title('Daily Profit/Loss (%)')
-        ax2.set_ylabel('Daily Return')
-        ax2.grid(True, alpha=0.3)
-        # Add a horizontal line at 0
-        ax2.axhline(0, color='black', linewidth=0.5)
+        returns = self.data['Equity'].pct_change().dropna()
+        # Sharpe Ratio: (průměrný výnos / std výnosu) * odmocnina z (počet svíček za rok)
+        # Předpokládáme 252 dní * cca 14 hodin obchodování (28 svíček) = 7056 svíček/rok
+        sharpe = (returns.mean() / returns.std()) * np.sqrt(252 * 28) if returns.std() != 0 else 0
 
-        # --- PANEL 3: DRAWDOWN ---
-        ax3.fill_between(drawdown.index, drawdown, 0, color='red', alpha=0.3)
-        ax3.plot(drawdown, color='red', linewidth=1)
-        ax3.set_title('Drawdown (Risk)')
-        ax3.set_ylabel('% Below Peak')
-        ax3.grid(True, alpha=0.3)
+        # Grafy
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10), sharex=True)
+        
+        ax1.plot(self.data.index, self.data['Equity'], label='Equity Curve', color='blue')
+        ax1.set_title(f"Equity (Zhodnocení: {(self.data['Equity'].iloc[-1]/self.start_capital-1)*100:.2f}%)")
+        ax1.legend()
+        
+        ax2.fill_between(self.data.index, drawdown * 100, 0, color='red', alpha=0.3)
+        ax2.set_title(f"Drawdown (Max DD: {max_dd:.2f}%)")
+        ax2.set_ylabel("%")
         
         plt.tight_layout()
         plt.show()
 
-        # Print Summary Stats
-        total_return = self.data['Cumulative_Strategy'].iloc[-1] - 1
-        max_dd = drawdown.min()
-        print(f"--- FINAL STATS ---")
-        print(f"Total Return: {total_return:.2%}")
-        print(f"Max Drawdown: {max_dd:.2%}")
+        print(f"--- FINÁLNÍ STATISTIKY ---")
+        print(f"Max Drawdown: {max_dd:.2f}%")
+        print(f"Sharpe Ratio: {sharpe:.2f}")
+        print(f"Počet obchodů: {len(trades_df)}")
+        print(f"Win Rate:     {(len(trades_df[trades_df['PnL'] > 0]) / len(trades_df)) * 100:.2f}%")
 
-# --- EXECUTION ---
 if __name__ == "__main__":
-    backtest = MeanReversionBacktester("SPY", "2020-01-01", "2026-01-01")
-    backtest.fetch_data()
-    backtest.run_backtest()
-    backtest.plot_results()
+    bt = FinalLongDurationBacktester(sl_pct=0.02) # SL 2%, TP 4%
+    bt.fetch_data()
+    bt.run_backtest()
+    bt.plot_results()
