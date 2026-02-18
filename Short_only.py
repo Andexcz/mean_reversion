@@ -172,3 +172,149 @@ if len(trades) > 0:
 
 else:
     print("Žádné obchody. Zkontroluj, jestli je LOOKBACK_WINDOW (120) menší než délka dostupných dat.")
+
+import numpy as np
+
+# ==========================================
+# DETAILNÍ OPTIMALIZACE SL_MULTIPLIER
+# ==========================================
+
+# Generujeme rozsah od 0.1 do 1.0 s krokem 0.01
+# np.arange(start, stop, step) - stop je exkluzivní, proto 1.01
+SL_TEST_RANGE = np.around(np.arange(0.1, 1.01, 0.01), 2)
+
+optimization_results = []
+
+print(f"Spouštím detailní optimalizaci pro {len(SL_TEST_RANGE)} variant...")
+
+for current_sl_mult in SL_TEST_RANGE:
+    current_cap = INITIAL_CAPITAL
+    trade_count = 0
+    equity_history = [INITIAL_CAPITAL]
+    
+    # Pro každou variantu projedeme historii
+    for i in range(len(df) - 1):
+        bar = df.iloc[i]
+        
+        if bar['Signal_Short']:
+            next_bar = df.iloc[i + 1]
+            # Kontrola víkendu / kontinuity dat
+            if (next_bar.name - bar.name).total_seconds() > 1800: continue
+            
+            entry = next_bar['Open']
+            atr = bar['Prev_Day_ATR']
+            if pd.isna(atr) or atr == 0: continue
+            
+            # Dynamický SL podle aktuálního násobku
+            dist = current_sl_mult * atr
+            sl_price = entry + dist
+            
+            # Risk Management (Fixed fractional risk)
+            pos_size = (current_cap * RISK_PER_TRADE) / dist
+            
+            # Logika výstupu: Pokud High svíčky lízne SL, končíme na SL. Jinak na Close.
+            if next_bar['High'] >= sl_price:
+                exit_p = sl_price
+            else:
+                exit_p = next_bar['Close']
+            
+            pnl = (entry - exit_p) * pos_size
+            current_cap += pnl
+            trade_count += 1
+            equity_history.append(current_cap)
+            
+    # Výpočet Max Drawdownu pro tuto variantu
+    equity_series = pd.Series(equity_history)
+    peak = equity_series.cummax()
+    drawdown = (equity_series - peak) / peak
+    max_dd = drawdown.min() * 100
+    
+    total_profit = ((current_cap - INITIAL_CAPITAL) / INITIAL_CAPITAL) * 100
+    
+    optimization_results.append({
+        'SL_Mult': current_sl_mult, 
+        'Profit': total_profit, 
+        'MaxDD': max_dd,
+        'Trades': trade_count
+    })
+
+# Převedeme na DataFrame pro snadnou analýzu
+opt_df = pd.DataFrame(optimization_results)
+best = opt_df.loc[opt_df['Profit'].idxmax()]
+
+print("\n" + "="*45)
+print(f"VÝSLEDEK OPTIMALIZACE (Rozsah 0.1 - 1.0)")
+print(f"Nejlepší SL_MULTIPLIER: {best['SL_Mult']}")
+print(f"Maximální zisk:        {best['Profit']:.2f}%")
+print(f"Max Drawdown u vítěze: {best['MaxDD']:.2f}%")
+print(f"Počet obchodů:         {int(best['Trades'])}")
+print("="*45)
+
+# Vizualizace
+fig, ax1 = plt.subplots(figsize=(12, 6))
+
+# Graf zisku
+ax1.set_xlabel('ATR Multiplier (SL)')
+ax1.set_ylabel('Celkový zisk (%)', color='tab:blue')
+ax1.plot(opt_df['SL_Mult'], opt_df['Profit'], color='tab:blue', linewidth=2, label='Zisk')
+ax1.tick_params(axis='y', labelcolor='tab:blue')
+ax1.grid(True, alpha=0.3)
+
+# Druhá osa pro Drawdown
+ax2 = ax1.twinx()
+ax2.set_ylabel('Max Drawdown (%)', color='tab:red')
+ax2.plot(opt_df['SL_Mult'], opt_df['MaxDD'], color='tab:red', linestyle='--', alpha=0.6, label='Max DD')
+ax2.tick_params(axis='y', labelcolor='tab:red')
+
+plt.title('Optimalizace: Zisk vs. Riziko (Krok 0.01)')
+fig.tight_layout()
+plt.show()
+
+# ... (kód po dokončení optimalizační smyčky)
+
+# Převedeme na DataFrame
+opt_df = pd.DataFrame(optimization_results)
+
+# Najdeme nejlepší výsledek pro zisk
+best_index = opt_df['Profit'].idxmax()
+best_sl = opt_df.loc[best_index, 'SL_Mult']
+best_profit = opt_df.loc[best_index, 'Profit']
+best_dd = opt_df.loc[best_index, 'MaxDD']
+
+# Vytvoření grafu
+fig, ax1 = plt.subplots(figsize=(12, 7))
+
+# 1. osa pro Zisk
+ax1.set_xlabel('ATR Multiplier (Stop Loss)')
+ax1.set_ylabel('Celkový zisk (%)', color='tab:blue', fontweight='bold')
+line1, = ax1.plot(opt_df['SL_Mult'], opt_df['Profit'], color='tab:blue', linewidth=2.5, label='Zisk (%)')
+ax1.tick_params(axis='y', labelcolor='tab:blue')
+ax1.grid(True, alpha=0.3, linestyle='--')
+
+# 2. osa pro Drawdown
+ax2 = ax1.twinx()
+ax2.set_ylabel('Max Drawdown (%)', color='tab:red', fontweight='bold')
+line2, = ax2.plot(opt_df['SL_Mult'], opt_df['MaxDD'], color='tab:red', linestyle='-', alpha=0.5, label='Max Drawdown (%)')
+ax2.tick_params(axis='y', labelcolor='tab:red')
+
+# --- PŘIDÁNÍ KOLMÉ ČÁRY PRO OPTIMUM ---
+plt.axvline(x=best_sl, color='red', linestyle='--', linewidth=2, label=f'Optimum (SL {best_sl})')
+
+# Sjednocení legendy do jedné
+lines = [line1, line2]
+labels = [l.get_label() for l in lines]
+ax1.legend(lines, labels, loc='upper left')
+
+plt.title(f'Optimalizace: Hledání rovnováhy mezi ziskem a rizikem\nBest SL: {best_sl} | Profit: {best_profit:.2f}% | DD: {best_dd:.2f}%', 
+          pad=20, fontweight='bold')
+
+fig.tight_layout()
+plt.show()
+
+# Výpis do terminálu
+print(f"\n" + "="*45)
+print(f"ANALÝZA DOKONČENA")
+print(f"Optimální SL Multiplier: {best_sl}")
+print(f"Odpovídající zisk:       {best_profit:.2f}%")
+print(f"Odpovídající Drawdown:   {best_dd:.2f}%")
+print("="*45)
