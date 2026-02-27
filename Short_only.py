@@ -187,32 +187,34 @@ optimization_results = []
 
 print(f"Spouštím detailní optimalizaci pro {len(SL_TEST_RANGE)} variant...")
 
+# ... (vše nad tímto zůstává stejné)
+
 for current_sl_mult in SL_TEST_RANGE:
     current_cap = INITIAL_CAPITAL
     trade_count = 0
     equity_history = [INITIAL_CAPITAL]
+    sl_pct_list = [] # <--- PŘIDÁNO: Seznam pro ukládání % velikosti SL
     
-    # Pro každou variantu projedeme historii
     for i in range(len(df) - 1):
         bar = df.iloc[i]
-        
         if bar['Signal_Short']:
             next_bar = df.iloc[i + 1]
-            # Kontrola víkendu / kontinuity dat
             if (next_bar.name - bar.name).total_seconds() > 1800: continue
             
             entry = next_bar['Open']
             atr = bar['Prev_Day_ATR']
             if pd.isna(atr) or atr == 0: continue
             
-            # Dynamický SL podle aktuálního násobku
             dist = current_sl_mult * atr
-            sl_price = entry + dist
             
-            # Risk Management (Fixed fractional risk)
+            # --- PŘIDÁNO: Výpočet % SL vůči aktuální ceně ---
+            sl_in_percent = (dist / entry) * 100
+            sl_pct_list.append(sl_in_percent)
+            # -----------------------------------------------
+
+            sl_price = entry + dist
             pos_size = (current_cap * RISK_PER_TRADE) / dist
             
-            # Logika výstupu: Pokud High svíčky lízne SL, končíme na SL. Jinak na Close.
             if next_bar['High'] >= sl_price:
                 exit_p = sl_price
             else:
@@ -222,6 +224,21 @@ for current_sl_mult in SL_TEST_RANGE:
             current_cap += pnl
             trade_count += 1
             equity_history.append(current_cap)
+            
+    # Výpočet Max Drawdownu a Profitu (zůstává stejné)
+    equity_series = pd.Series(equity_history)
+    peak = equity_series.cummax()
+    drawdown = (equity_series - peak) / peak
+    max_dd = drawdown.min() * 100
+    total_profit = ((current_cap - INITIAL_CAPITAL) / INITIAL_CAPITAL) * 100
+    
+    optimization_results.append({
+        'SL_Mult': current_sl_mult, 
+        'Profit': total_profit, 
+        'MaxDD': max_dd,
+        'Trades': trade_count,
+        'Avg_SL_Pct': np.mean(sl_pct_list) if sl_pct_list else 0 # <--- PŘIDÁNO: Průměrný % SL pro tuto variantu
+    })
             
     # Výpočet Max Drawdownu pro tuto variantu
     equity_series = pd.Series(equity_history)
@@ -317,4 +334,14 @@ print(f"ANALÝZA DOKONČENA")
 print(f"Optimální SL Multiplier: {best_sl}")
 print(f"Odpovídající zisk:       {best_profit:.2f}%")
 print(f"Odpovídající Drawdown:   {best_dd:.2f}%")
+print("="*45)
+
+# Výpis do terminálu
+print(f"\n" + "="*45)
+print(f"ANALÝZA DOKONČENA")
+print(f"Optimální SL Multiplier: {best_sl}")
+print(f"Odpovídající zisk:       {best_profit:.2f}%")
+print(f"Odpovídající Drawdown:   {best_dd:.2f}%")
+print(f"Průměrná vzdálenost SL: {best['Avg_SL_Pct']:.3f} % ceny")
+# -----------------------------------------------
 print("="*45)

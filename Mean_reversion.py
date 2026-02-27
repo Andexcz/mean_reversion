@@ -10,7 +10,7 @@ class FinalLongDurationBacktester:
         # Nastavení základních parametrů účtu a strategie
         self.start_capital = start_capital
         self.window = window
-        #self.tc = transaction_cost  Poplatky momentálně ignoruji
+        self.tc = transaction_cost 
         self.sl_pct = sl_pct  
         self.tp_pct = sl_pct * 2  # Fixní RR 1:2
         self.data = None
