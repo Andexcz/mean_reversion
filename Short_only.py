@@ -20,7 +20,7 @@ END_DATE   = "2026-2-15"  # Formát YYYY-MM-DD
 # -----------------------------------------------------
 
 START_TIME = "16:30"      
-LAST_SIGNAL_TIME = "22:00" 
+LAST_SIGNAL_TIME = "23:00" 
 
 print(f"--- START BACKTESTU ({START_DATE} až {END_DATE}) ---")
 
