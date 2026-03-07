@@ -16,11 +16,11 @@ RISK_PER_TRADE = 0.012
 
 # --- 1.1 NASTAVENÍ ČASOVÉHO RÁMCE (ZDE ZMĚŇ DATUM) ---
 START_DATE = "2016-01-01"  # Formát YYYY-MM-DD
-END_DATE   = "2026-2-15"  # Formát YYYY-MM-DD
+END_DATE   = "2026-3-6"  # Formát YYYY-MM-DD
 # -----------------------------------------------------
 
 START_TIME = "16:30"      
-LAST_SIGNAL_TIME = "23:00" 
+LAST_SIGNAL_TIME = "23:30" 
 
 print(f"--- START BACKTESTU ({START_DATE} až {END_DATE}) ---")
 
