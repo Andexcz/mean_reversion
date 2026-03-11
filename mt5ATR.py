@@ -225,7 +225,7 @@ if not mt5.initialize():
     quit()
 
 print(f"==================================================")
-print(f"*** BOT V3 FINAL (OSTRÝ PROVOZ) ***")
+print(f"*** BOT V3 ***")
 print(f"Účet: {mt5.account_info().login} | Server: {mt5.account_info().server}")
 print(f"Spuštěna ochrana a Hard Close systém (Zavíráme ve {HARD_CLOSE_TIME}).")
 print(f"==================================================")
