@@ -59,7 +59,7 @@ else:
     print(f"ZÁVĚR: Neznámé pásmo. Peak je v {peak_time}.")
     print("Porovnej to s 09:30 NY času a spočítej posun.")
 
-# 5. Vykreslení grafu aktivity během dne
+# 5. Vykreslení grafu volume profilu pro vizuální kontrolu
 plt.figure(figsize=(12, 6))
 volume_profile.plot(kind='bar', color='orange')
 plt.title('Průměrná aktivita (Volume) během dne')
