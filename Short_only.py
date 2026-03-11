@@ -14,9 +14,9 @@ SL_MULTIPLIER = 0.24
 INITIAL_CAPITAL = 10000.0 
 RISK_PER_TRADE = 0.012
 
-# --- 1.1 NASTAVENÍ ČASOVÉHO RÁMCE (ZDE ZMĚŇ DATUM) ---
-START_DATE = "2016-01-01"  # Formát YYYY-MM-DD
-END_DATE   = "2026-3-6"  # Formát YYYY-MM-DD
+# --- 1.1 NASTAVENÍ ČASOVÉHO RÁMCE ---
+START_DATE = "2010-01-01"  # Formát YYYY-MM-DD
+END_DATE   = "2026-3-9"  # Formát YYYY-MM-DD
 # -----------------------------------------------------
 
 START_TIME = "16:30"      
