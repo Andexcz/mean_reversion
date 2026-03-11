@@ -270,7 +270,7 @@ print("="*45)
 # Vizualizace
 fig, ax1 = plt.subplots(figsize=(12, 6))
 
-# Graf zisku
+# Graf zisku/ztráty
 ax1.set_xlabel('ATR Multiplier (SL)')
 ax1.set_ylabel('Celkový zisk (%)', color='tab:blue')
 ax1.plot(opt_df['SL_Mult'], opt_df['Profit'], color='tab:blue', linewidth=2, label='Zisk')
